@@ -1,0 +1,14 @@
+# Clasp auth — contains your Google credentials, never commit this
+.clasprc.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+
+# Node (if you install clasp locally rather than globally)
+node_modules/
+package-lock.json
