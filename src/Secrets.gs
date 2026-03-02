@@ -177,7 +177,7 @@ function saveIfNotBlank(props, key, value) {
 
 function totalPrompts(platform) {
   const extras = { nexudus: 2, cobot: 1, officernd: 2 };
-  return 1 + (extras[platform] || 0);
+  return 2 + (extras[platform] || 0);
 }
 
 function isPlatformConfigured(platform, stored) {
