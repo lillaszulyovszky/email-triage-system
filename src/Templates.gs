@@ -3,8 +3,7 @@
 // ============================================
 // Gemini reads the actual email and writes a specific reply
 // in the tone shown in REPLY_STYLE_GUIDES.
-// A manager summary note is prepended to every draft (Feature 2).
-// Booking drafts include real availability from the sheet (Feature 3).
+// Booking drafts include real availability from the sheet.
 // ============================================
 
 function generateDraftReply(message, analysis, isFollowUp) {
@@ -17,54 +16,18 @@ function generateDraftReply(message, analysis, isFollowUp) {
 
   if (category === 'COMPLAINT') return null;
 
-  // Lookup member once — shared by both the manager note and the AI prompt
   const member = getMemberByEmail(senderEmail);
 
-  let draft;
-  let draftMethod;
   try {
-    draft       = generateAIDraft(category, language, senderName, subject, body, isFollowUp, member);
-    draftMethod = 'AI';
+    const draft = generateAIDraft(category, language, senderName, subject, body, isFollowUp, member);
+    Logger.log(`Draft generated via AI for: ${subject}`);
+    return draft;
   } catch (e) {
-    Logger.log('AI draft failed, using fallback: ' + e.message);
-    draft       = generateFallbackReply(category, senderName);
-    draftMethod = 'Fallback — ' + e.message;
+    Logger.log(`AI draft failed (using fallback): ${e.message} | subject: ${subject}`);
+    return generateFallbackReply(category, senderName);
   }
-
-  // ── FEATURE 2: Manager note ────────────────────────────────────────────────
-  const summaryNote = buildManagerNote(analysis, isFollowUp, member, draftMethod);
-  return summaryNote + draft;
 }
 
-
-// ── FEATURE 2: Manager note builder ───────────────────────────────────────
-function buildManagerNote(analysis, isFollowUp, member, draftMethod) {
-  const confidence   = Math.round((analysis.confidence || 0) * 100);
-  const sentiment    = analysis.sentiment || 'neutral';
-  const flags        = [
-    isFollowUp             ? '🔄 FOLLOW-UP'    : null,
-    sentiment === 'negative' ? '⚠️ NEGATIVE TONE' : null,
-    sentiment === 'positive' ? '😊 POSITIVE TONE' : null
-  ].filter(Boolean).join(' | ');
-
-  let memberSection = '';
-  if (member) {
-    const statusTag = member.status !== 'Active' ? ` (${member.status})` : '';
-    memberSection =
-      `// Member:     ${member.name}${member.company ? ' @ ' + member.company : ''} — ${member.tenure}${statusTag}\n` +
-      `// Plan:       ${member.plan}${member.desk ? ' | ' + member.desk : ''}\n` +
-      (member.notes ? `// Note:       ${member.notes}\n` : '');
-  }
-
-  return (
-    `// ─────────────────────────────────────────────────────\n` +
-    `// MANAGER NOTE — delete this block before sending\n` +
-    `// Category:   ${analysis.categoryName} (${confidence}% confidence)${flags ? ' | ' + flags : ''}\n` +
-    `// Draft:      ${draftMethod}\n` +
-    memberSection +
-    `// ─────────────────────────────────────────────────────\n\n`
-  );
-}
 
 
 // ============================================
@@ -72,7 +35,7 @@ function buildManagerNote(analysis, isFollowUp, member, draftMethod) {
 // ============================================
 
 function generateAIDraft(category, language, senderName, subject, body, isFollowUp, member) {
-  if (!AI_CONFIG.enabled || AI_CONFIG.geminiApiKey === 'YOUR_GEMINI_API_KEY_HERE') {
+  if (!AI_CONFIG.enabled || !AI_CONFIG.geminiApiKey || AI_CONFIG.geminiApiKey === 'YOUR_GEMINI_API_KEY_HERE') {
     return generateFallbackReply(category, senderName);
   }
 
@@ -134,8 +97,12 @@ function generateAIDraft(category, language, senderName, subject, body, isFollow
   };
   const options = { method: 'post', contentType: 'application/json', payload: JSON.stringify(payload), muteHttpExceptions: true };
 
-  const result = JSON.parse(UrlFetchApp.fetch(url, options).getContentText());
-  if (!result.candidates || !result.candidates[0]) throw new Error('No response from Gemini');
+  const response = UrlFetchApp.fetch(url, options);
+  const result   = JSON.parse(response.getContentText());
+  if (!result.candidates || !result.candidates[0]) {
+    const apiError = result.error ? `${result.error.status}: ${result.error.message}` : response.getContentText().substring(0, 300);
+    throw new Error(apiError);
+  }
   return result.candidates[0].content.parts[0].text.trim();
 }
 
