@@ -17,13 +17,16 @@ function generateDraftReply(message, analysis, isFollowUp) {
 
   if (category === 'COMPLAINT') return null;
 
+  // Lookup member once — shared by both the manager note and the AI prompt
+  const member = getMemberByEmail(senderEmail);
+
   // ── FEATURE 2: Manager summary note ───────────────────────────────────────
   // A one-line note prepended to the draft so the manager understands
   // the email at a glance without re-reading it. Stripped before sending.
-  const summaryNote = buildManagerNote(message, analysis, isFollowUp);
+  const summaryNote = buildManagerNote(message, analysis, isFollowUp, member);
 
   try {
-    const draft = generateAIDraft(category, language, senderName, subject, body, isFollowUp);
+    const draft = generateAIDraft(category, language, senderName, subject, body, isFollowUp, member);
     return summaryNote + draft;
   } catch (e) {
     Logger.log('AI draft failed, using fallback: ' + e.message);
@@ -33,7 +36,7 @@ function generateDraftReply(message, analysis, isFollowUp) {
 
 
 // ── FEATURE 2: Manager note builder ───────────────────────────────────────
-function buildManagerNote(message, analysis, isFollowUp) {
+function buildManagerNote(message, analysis, isFollowUp, member) {
   const sentiment    = analysis.sentiment || 'neutral';
   const confidence   = Math.round((analysis.confidence || 0) * 100);
   const followUpTag  = isFollowUp        ? ' | 🔄 FOLLOW-UP'     : '';
@@ -48,8 +51,6 @@ function buildManagerNote(message, analysis, isFollowUp) {
     summary = `${analysis.categoryName} email from ${extractName(message.getFrom())}`;
   }
 
-  // Member lookup — pulls tenure, plan, desk, notes from Members sheet
-  const member     = getMemberByEmail(message.getFrom());
   let memberLine   = '';
   let planLine     = '';
   let notesLine    = '';
@@ -98,7 +99,7 @@ function getEmailSummary(body) {
 // AI DRAFT GENERATION
 // ============================================
 
-function generateAIDraft(category, language, senderName, subject, body, isFollowUp) {
+function generateAIDraft(category, language, senderName, subject, body, isFollowUp, member) {
   if (!AI_CONFIG.enabled || AI_CONFIG.geminiApiKey === 'YOUR_GEMINI_API_KEY_HERE') {
     return generateFallbackReply(category, senderName);
   }
@@ -111,12 +112,25 @@ function generateAIDraft(category, language, senderName, subject, body, isFollow
   if (category === 'BOOKING') {
     const availability = getAvailabilitySummary();
     if (availability) {
-      availabilityContext = `\nCURRENT ROOM AVAILABILITY (use this in your reply — be specific):\n${availability}\n`;
+      availabilityContext = `\nCURRENT ROOM AVAILABILITY (reference specific slots — do not guess or invent times):\n${availability}\n`;
+    } else {
+      availabilityContext = `\nNO LIVE AVAILABILITY DATA: Do not confirm or suggest any times. Ask for their preferred date, time, and group size so we can check and get back to them.\n`;
     }
   }
 
+  // ── Member context — personalises the reply using Members sheet data ──────
+  let memberContext = '';
+  if (member) {
+    memberContext =
+      `\nMEMBER CONTEXT (use this to personalise naturally — don't quote it verbatim):\n` +
+      `- Name: ${member.name} | Plan: ${member.plan} | Member for: ${member.tenure}\n` +
+      (member.notes ? `- Note: ${member.notes}\n` : '');
+  } else {
+    memberContext = `\nMEMBER CONTEXT: Not in our member database — treat as a new prospect or first-time enquiry.\n`;
+  }
+
   const followUpInstruction = isFollowUp
-    ? '\nThis is a FOLLOW-UP — the member has replied to a previous thread. Acknowledge that and continue the conversation naturally.\n'
+    ? '\nThis is a FOLLOW-UP — the member has replied to a previous thread. Acknowledge that and continue naturally.\n'
     : '';
 
   const prompt =
@@ -124,14 +138,17 @@ function generateAIDraft(category, language, senderName, subject, body, isFollow
     `Write a reply to the email below.\n` +
     `\nRULES:\n` +
     `- Write ONLY the email body, no subject line\n` +
-    `- Sound like a real person — warm, natural, not corporate\n` +
-    `- Be specific to what they actually asked, no generic filler\n` +
+    `- Sound like a real person — warm, direct, conversational, not corporate\n` +
+    `- Use the sender's first name naturally (not in every sentence)\n` +
+    `- Be specific to what they actually asked — no generic filler\n` +
     `- Keep it short (3-5 sentences max)\n` +
     `- Never use em dashes (—) between thoughts\n` +
-    `- Never use "I hope this email finds you well" or "do not hesitate to contact us"\n` +
+    `- Never open with "I hope this email finds you well", "Great to hear from you", or "Thank you for reaching out"\n` +
+    `- Never close with "do not hesitate to contact us" or "please feel free to"\n` +
     `- Detect the language of the email and reply in the SAME language\n` +
     `- End with one friendly question or a clear next step\n` +
     followUpInstruction +
+    memberContext +
     availabilityContext +
     `- Sign off with exactly this (do not translate it):\n${signOff}\n` +
     `\nTONE EXAMPLE:\n${styleGuide}\n` +

@@ -200,9 +200,7 @@ function sendSingleTestEmail() {
   if (result !== ui.Button.YES) return;
 
   try {
-    const htmlBody = `<div style="font-family: Arial, sans-serif; charset=UTF-8;">
-<p><strong>[Test Email]</strong><br>
-<em>[From: ${testEmail.from}]</em></p>
+    const htmlBody = `<div style="font-family: Arial, sans-serif;">
 <p>${testEmail.body.replace(/\n/g, '<br>')}</p>
 </div>`;
 
@@ -267,9 +265,7 @@ function generateSafeTestEmails() {
         email.expectedVip    ? 'VIP'    : null
       ].filter(Boolean).join(' | ');
 
-      const htmlBody = `<div style="font-family: Arial, sans-serif; charset=UTF-8;">
-<p><strong>[Test Email - ${tags}]</strong><br>
-<em>[From: ${email.from}]</em></p>
+      const htmlBody = `<div style="font-family: Arial, sans-serif;">
 <p>${email.body.replace(/\n/g, '<br>')}</p>
 </div>`;
 
