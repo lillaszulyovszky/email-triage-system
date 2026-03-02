@@ -177,13 +177,12 @@ const TEST_EMAILS = [
 // ============================================
 
 function sendSingleTestEmail() {
-  // IMPORTANT: Change this to YOUR email address
-  const targetEmail = 'YOUR_EMAIL@gmail.com';
+  const targetEmail = getSecret('INBOX_ADDRESS');
 
-  if (targetEmail === 'YOUR_EMAIL@gmail.com') {
+  if (!targetEmail) {
     SpreadsheetApp.getUi().alert(
       'Email Not Configured',
-      'Please edit EmailGenerator.gs and set your email address in sendSingleTestEmail().\n\nReplace YOUR_EMAIL@gmail.com with your actual email.',
+      'Please set your inbox address via:\nEmail Triage > 🔑 Configure API Keys',
       SpreadsheetApp.getUi().ButtonSet.OK
     );
     return;
@@ -223,13 +222,12 @@ function sendSingleTestEmail() {
 }
 
 function generateSafeTestEmails() {
-  // IMPORTANT: Change this to YOUR email address
-  const targetEmail = 'YOUR_EMAIL@gmail.com';
+  const targetEmail = getSecret('INBOX_ADDRESS');
 
-  if (targetEmail === 'YOUR_EMAIL@gmail.com') {
+  if (!targetEmail) {
     SpreadsheetApp.getUi().alert(
       'Email Not Configured',
-      'Please edit EmailGenerator.gs and set your email address in generateSafeTestEmails().\n\nReplace YOUR_EMAIL@gmail.com with your actual email.',
+      'Please set your inbox address via:\nEmail Triage > 🔑 Configure API Keys',
       SpreadsheetApp.getUi().ButtonSet.OK
     );
     return;

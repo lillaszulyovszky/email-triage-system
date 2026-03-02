@@ -53,10 +53,12 @@ const CONFIG = {
 
   // Gmail address that receives member emails
   // Used to build the email search filter
-  inboxAddress:    'YOUR_EMAIL@gmail.com',
+  // Set via: Email Triage > 🔑 Configure API Keys
+  get inboxAddress()    { return getSecret('INBOX_ADDRESS')    || 'YOUR_EMAIL@gmail.com'; },
 
   // Who gets the morning digest and error alerts
-  digestRecipient: 'YOUR_EMAIL@gmail.com',
+  // Set via: Email Triage > 🔑 Configure API Keys
+  get digestRecipient() { return getSecret('DIGEST_RECIPIENT') || 'YOUR_EMAIL@gmail.com'; },
 
   // Which platform you use for member/booking data
   // Options: 'nexudus', 'cobot', 'officernd', 'manual'

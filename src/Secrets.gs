@@ -39,11 +39,33 @@ function configureSecrets() {
   if (geminiResult.getSelectedButton() === ui.Button.CANCEL) return;
   saveIfNotBlank(props, 'GEMINI_API_KEY', geminiResult.getResponseText());
 
+  const inboxResult = ui.prompt(
+    '2 of ' + totalPrompts(platform),
+    'INBOX EMAIL ADDRESS\n\n' +
+    'The Gmail address that receives member emails.\n' +
+    'This is the address your members write to.\n\n' +
+    (current['INBOX_ADDRESS'] ? '✓ Already set — enter new address to update, or leave blank to keep.' : '⚠️ Not yet set.'),
+    ui.ButtonSet.OK_CANCEL
+  );
+  if (inboxResult.getSelectedButton() === ui.Button.CANCEL) return;
+  saveIfNotBlank(props, 'INBOX_ADDRESS', inboxResult.getResponseText());
+
+  const digestResult = ui.prompt(
+    '3 of ' + totalPrompts(platform),
+    'DIGEST RECIPIENT EMAIL\n\n' +
+    'Who receives the daily summary and error alerts.\n' +
+    'Usually your own email address.\n\n' +
+    (current['DIGEST_RECIPIENT'] ? '✓ Already set — enter new address to update, or leave blank to keep.' : '⚠️ Not yet set.'),
+    ui.ButtonSet.OK_CANCEL
+  );
+  if (digestResult.getSelectedButton() === ui.Button.CANCEL) return;
+  saveIfNotBlank(props, 'DIGEST_RECIPIENT', digestResult.getResponseText());
+
   // ── Platform-specific credentials ─────────────────────────────────────
 
   if (platform === 'nexudus') {
     const userResult = ui.prompt(
-      '2 of ' + totalPrompts(platform),
+      '4 of ' + totalPrompts(platform),
       'NEXUDUS USERNAME\n\nThe email you use to log into app.nexudus.com.\n\n' +
       (current['NEXUDUS_USERNAME'] ? '✓ Already set.' : '⚠️ Not yet set.'),
       ui.ButtonSet.OK_CANCEL
@@ -52,7 +74,7 @@ function configureSecrets() {
     saveIfNotBlank(props, 'NEXUDUS_USERNAME', userResult.getResponseText());
 
     const passResult = ui.prompt(
-      '3 of ' + totalPrompts(platform),
+      '5 of ' + totalPrompts(platform),
       'NEXUDUS PASSWORD\n\nYour Nexudus login password.\n\n' +
       (current['NEXUDUS_PASSWORD'] ? '✓ Already set.' : '⚠️ Not yet set.'),
       ui.ButtonSet.OK_CANCEL
@@ -63,7 +85,7 @@ function configureSecrets() {
 
   if (platform === 'cobot') {
     const tokenResult = ui.prompt(
-      '2 of ' + totalPrompts(platform),
+      '4 of ' + totalPrompts(platform),
       'COBOT ACCESS TOKEN\n\n' +
       'Generate one at: [yourspace].cobot.me/oauth/access_tokens\n' +
       'Scope needed: read\n\n' +
@@ -76,7 +98,7 @@ function configureSecrets() {
 
   if (platform === 'officernd') {
     const clientIdResult = ui.prompt(
-      '2 of ' + totalPrompts(platform),
+      '4 of ' + totalPrompts(platform),
       'OFFICERND CLIENT ID\n\n' +
       'Found in: OfficeR&D Settings > Integrations > API\n\n' +
       (current['OFFICERND_CLIENT_ID'] ? '✓ Already set.' : '⚠️ Not yet set.'),
@@ -86,7 +108,7 @@ function configureSecrets() {
     saveIfNotBlank(props, 'OFFICERND_CLIENT_ID', clientIdResult.getResponseText());
 
     const clientSecretResult = ui.prompt(
-      '3 of ' + totalPrompts(platform),
+      '5 of ' + totalPrompts(platform),
       'OFFICERND CLIENT SECRET\n\n' +
       'Found in: OfficeR&D Settings > Integrations > API\n\n' +
       (current['OFFICERND_CLIENT_SECRET'] ? '✓ Already set.' : '⚠️ Not yet set.'),
@@ -100,13 +122,17 @@ function configureSecrets() {
 
   const stored    = props.getProperties();
   const geminiOk  = !!stored['GEMINI_API_KEY'];
+  const inboxOk   = !!stored['INBOX_ADDRESS'];
+  const digestOk  = !!stored['DIGEST_RECIPIENT'];
   const platformOk = isPlatformConfigured(platform, stored);
 
   ui.alert(
     '✓ Credentials Saved',
-    'Gemini API key: '  + (geminiOk   ? '✓ Set'     : '⚠️ Missing') + '\n' +
+    'Gemini API key:    ' + (geminiOk  ? '✓ Set' : '⚠️ Missing') + '\n' +
+    'Inbox address:     ' + (inboxOk   ? '✓ Set' : '⚠️ Missing') + '\n' +
+    'Digest recipient:  ' + (digestOk  ? '✓ Set' : '⚠️ Missing') + '\n' +
     platformStatus(platform, stored) + '\n\n' +
-    (geminiOk && platformOk
+    (geminiOk && inboxOk && digestOk && platformOk
       ? 'You\'re all set! Run ✅ Test Setup to verify everything works.'
       : '⚠️ Some credentials are still missing. Run 🔑 Configure API Keys again to complete setup.'),
     ui.ButtonSet.OK
@@ -123,6 +149,7 @@ function viewSecretStatus() {
 
   const keys = [
     'GEMINI_API_KEY',
+    'INBOX_ADDRESS', 'DIGEST_RECIPIENT',
     'NEXUDUS_USERNAME', 'NEXUDUS_PASSWORD',
     'COBOT_ACCESS_TOKEN',
     'OFFICERND_CLIENT_ID', 'OFFICERND_CLIENT_SECRET'
@@ -177,7 +204,7 @@ function saveIfNotBlank(props, key, value) {
 
 function totalPrompts(platform) {
   const extras = { nexudus: 2, cobot: 1, officernd: 2 };
-  return 2 + (extras[platform] || 0);
+  return 3 + (extras[platform] || 0);
 }
 
 function isPlatformConfigured(platform, stored) {
