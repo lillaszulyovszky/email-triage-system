@@ -20,78 +20,50 @@ function generateDraftReply(message, analysis, isFollowUp) {
   // Lookup member once — shared by both the manager note and the AI prompt
   const member = getMemberByEmail(senderEmail);
 
-  // ── FEATURE 2: Manager summary note ───────────────────────────────────────
-  // A one-line note prepended to the draft so the manager understands
-  // the email at a glance without re-reading it. Stripped before sending.
-  const summaryNote = buildManagerNote(message, analysis, isFollowUp, member);
-
+  let draft;
+  let draftMethod;
   try {
-    const draft = generateAIDraft(category, language, senderName, subject, body, isFollowUp, member);
-    return summaryNote + draft;
+    draft       = generateAIDraft(category, language, senderName, subject, body, isFollowUp, member);
+    draftMethod = 'AI';
   } catch (e) {
     Logger.log('AI draft failed, using fallback: ' + e.message);
-    return summaryNote + generateFallbackReply(category, senderName);
+    draft       = generateFallbackReply(category, senderName);
+    draftMethod = 'Fallback — ' + e.message;
   }
+
+  // ── FEATURE 2: Manager note ────────────────────────────────────────────────
+  const summaryNote = buildManagerNote(analysis, isFollowUp, member, draftMethod);
+  return summaryNote + draft;
 }
 
 
 // ── FEATURE 2: Manager note builder ───────────────────────────────────────
-function buildManagerNote(message, analysis, isFollowUp, member) {
-  const sentiment    = analysis.sentiment || 'neutral';
+function buildManagerNote(analysis, isFollowUp, member, draftMethod) {
   const confidence   = Math.round((analysis.confidence || 0) * 100);
-  const followUpTag  = isFollowUp        ? ' | 🔄 FOLLOW-UP'     : '';
-  const sentimentTag = sentiment === 'negative' ? ' | ⚠️ NEGATIVE TONE' :
-                       sentiment === 'positive' ? ' | 😊 POSITIVE TONE' : '';
+  const sentiment    = analysis.sentiment || 'neutral';
+  const flags        = [
+    isFollowUp             ? '🔄 FOLLOW-UP'    : null,
+    sentiment === 'negative' ? '⚠️ NEGATIVE TONE' : null,
+    sentiment === 'positive' ? '😊 POSITIVE TONE' : null
+  ].filter(Boolean).join(' | ');
 
-  // One-line AI summary of the email content
-  let summary = '';
-  try {
-    summary = getEmailSummary(message.getPlainBody().substring(0, 800));
-  } catch (e) {
-    summary = `${analysis.categoryName} email from ${extractName(message.getFrom())}`;
-  }
-
-  let memberLine   = '';
-  let planLine     = '';
-  let notesLine    = '';
-
+  let memberSection = '';
   if (member) {
     const statusTag = member.status !== 'Active' ? ` (${member.status})` : '';
-    memberLine = `// Member:     ${member.name}${member.company ? ' @ ' + member.company : ''} — ${member.tenure}${statusTag}\n`;
-    planLine   = `// Plan:       ${member.plan}${member.desk ? ' | ' + member.desk : ''}\n`;
-    notesLine  = member.notes ? `// Note:       ${member.notes}\n` : '';
-  } else {
-    memberLine = `// Member:     Not found in Members sheet — likely a new prospect\n`;
+    memberSection =
+      `// Member:     ${member.name}${member.company ? ' @ ' + member.company : ''} — ${member.tenure}${statusTag}\n` +
+      `// Plan:       ${member.plan}${member.desk ? ' | ' + member.desk : ''}\n` +
+      (member.notes ? `// Note:       ${member.notes}\n` : '');
   }
 
   return (
     `// ─────────────────────────────────────────────────────\n` +
     `// MANAGER NOTE — delete this block before sending\n` +
-    `// Summary:    ${summary}\n` +
-    `// Category:   ${analysis.categoryName} (${confidence}% confidence)${sentimentTag}${followUpTag}\n` +
-    memberLine +
-    planLine +
-    notesLine +
+    `// Category:   ${analysis.categoryName} (${confidence}% confidence)${flags ? ' | ' + flags : ''}\n` +
+    `// Draft:      ${draftMethod}\n` +
+    memberSection +
     `// ─────────────────────────────────────────────────────\n\n`
   );
-}
-
-function getEmailSummary(body) {
-  if (!AI_CONFIG.enabled || AI_CONFIG.geminiApiKey === 'YOUR_GEMINI_API_KEY_HERE') {
-    return '(AI not configured — add Gemini key for summaries)';
-  }
-
-  const prompt = `Summarise this email in ONE short sentence (max 15 words), from the perspective of a coworking space manager. Just the summary, nothing else.\n\n${body}`;
-
-  const url     = `https://generativelanguage.googleapis.com/v1beta/models/${AI_CONFIG.model}:generateContent?key=${AI_CONFIG.geminiApiKey}`;
-  const payload = {
-    contents: [{ parts: [{ text: prompt }] }],
-    generationConfig: { temperature: 0.2, maxOutputTokens: 50 }
-  };
-  const options = { method: 'post', contentType: 'application/json', payload: JSON.stringify(payload), muteHttpExceptions: true };
-
-  const result = JSON.parse(UrlFetchApp.fetch(url, options).getContentText());
-  return result.candidates[0].content.parts[0].text.trim();
 }
 
 
@@ -107,6 +79,8 @@ function generateAIDraft(category, language, senderName, subject, body, isFollow
   const styleGuide = REPLY_STYLE_GUIDES[category] || REPLY_STYLE_GUIDES['GENERIC'];
   const signOff    = buildSignOff();
 
+  const todayStr = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'EEEE d MMMM yyyy');
+
   // ── FEATURE 3: Availability injection for booking emails ──────────────────
   let availabilityContext = '';
   if (category === 'BOOKING') {
@@ -114,39 +88,37 @@ function generateAIDraft(category, language, senderName, subject, body, isFollow
     if (availability) {
       availabilityContext = `\nCURRENT ROOM AVAILABILITY (reference specific slots — do not guess or invent times):\n${availability}\n`;
     } else {
-      availabilityContext = `\nNO LIVE AVAILABILITY DATA: Do not confirm or suggest any times. Ask for their preferred date, time, and group size so we can check and get back to them.\n`;
+      availabilityContext = `\nNO LIVE AVAILABILITY DATA: Acknowledge the specific date, time, and group size they mentioned. Tell them you will check and confirm — do not make up availability.\n`;
     }
   }
 
-  // ── Member context — personalises the reply using Members sheet data ──────
+  // ── Member context — only injected when member is found in the sheet ──────
   let memberContext = '';
   if (member) {
     memberContext =
-      `\nMEMBER CONTEXT (use this to personalise naturally — don't quote it verbatim):\n` +
+      `\nMEMBER CONTEXT (use to personalise naturally — don't quote verbatim):\n` +
       `- Name: ${member.name} | Plan: ${member.plan} | Member for: ${member.tenure}\n` +
       (member.notes ? `- Note: ${member.notes}\n` : '');
-  } else {
-    memberContext = `\nMEMBER CONTEXT: Not in our member database — treat as a new prospect or first-time enquiry.\n`;
   }
 
   const followUpInstruction = isFollowUp
-    ? '\nThis is a FOLLOW-UP — the member has replied to a previous thread. Acknowledge that and continue naturally.\n'
+    ? '\nThis is a FOLLOW-UP to a previous thread. Acknowledge it and continue naturally.\n'
     : '';
 
   const prompt =
-    `You are a friendly community manager at a coworking space.\n` +
+    `You are a friendly community manager at a coworking space. Today is ${todayStr}.\n` +
     `Write a reply to the email below.\n` +
     `\nRULES:\n` +
     `- Write ONLY the email body, no subject line\n` +
     `- Sound like a real person — warm, direct, conversational, not corporate\n` +
-    `- Use the sender's first name naturally (not in every sentence)\n` +
-    `- Be specific to what they actually asked — no generic filler\n` +
+    `- Use the sender's first name once near the start\n` +
+    `- Mirror back the specific details from their email (dates, times, room size, issue described)\n` +
     `- Keep it short (3-5 sentences max)\n` +
     `- Never use em dashes (—) between thoughts\n` +
     `- Never open with "I hope this email finds you well", "Great to hear from you", or "Thank you for reaching out"\n` +
     `- Never close with "do not hesitate to contact us" or "please feel free to"\n` +
     `- Detect the language of the email and reply in the SAME language\n` +
-    `- End with one friendly question or a clear next step\n` +
+    `- End with one clear next step or friendly question\n` +
     followUpInstruction +
     memberContext +
     availabilityContext +
